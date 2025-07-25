@@ -11,7 +11,7 @@ Resources:
   S3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: nginx-logs-bucket-ust2
+      BucketName: nginx-logs-bucket-ust3
 
   EC2InstanceRole:
     Type: AWS::IAM::Role
@@ -33,7 +33,7 @@ Resources:
                 Action:
                   - s3:PutObject
                 Resource:
-                  - !Sub arn:aws:s3:::nginx-logs-bucket-ust2/*
+                  - !Sub arn:aws:s3:::nginx-logs-bucket-ust3/*
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -58,12 +58,12 @@ Resources:
         chkconfig nginx on
         mkdir -p /var/log/myapp
         echo "Logging started at $(date)" >> /var/log/myapp/log1.txt
-        aws s3 cp /var/log/myapp/log1.txt s3://nginx-logs-bucket-ust2/log1.txt #Logfile
+        aws s3 cp /var/log/myapp/log1.txt s3://nginx-logs-bucket-ust3/log1.txt #Logfile
         
         echo "Log rotation initialized at $(date)" >> /var/log/myapp/log2.txt  #Logfile updated hourly
         cat <<EOF > /etc/cron.hourly/s3upload
         #!/bin/bash
-        aws s3 cp /var/log/myapp/log2.txt s3://nginx-logs-bucket-ust2/$(date +\%Y-\%m-\%d_\%H-\%M).log.txt
+        aws s3 cp /var/log/myapp/log2.txt s3://nginx-logs-bucket-ust3/$(date +\%Y-\%m-\%d_\%H-\%M).log.txt
         EOF
         chmod +x /etc/cron.hourly/s3upload
       
