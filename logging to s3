@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates an EC2 instance with Nginx installed. Write EC2 logs to S3 bucket
+
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: nginx-logs-bucket-ust4
+
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action:
+              - s3:GetObject
+            Resource:
+              - !Sub "arn:aws:s3:::nginx-logs-bucket-ust4/*"
+
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: S3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource:
+                  - !Sub arn:aws:s3:::nginx-logs-bucket-ust4/*
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2InstanceRole
+
+  WebServerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0437df53acb2bbbfd # Amazon Linux 2023 AMI 
+      InstanceType: t3.micro
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref WebServerSecurityGroup
+      UserData: !Base64 |
+        #!/bin/bash
+        yum update -y
+        yum install -y nginx
+        service nginx start
+        chkconfig nginx on
+    
+        # Set hourly cron job
+        cat <<EOF > /etc/cron.hourly/upload_logs
+        #!/bin/bash
+        echo "$(date): hourly log update" >> /var/log/myapp/log.txt
+        echo "<html><body><h2>EC2 Logs</h2><pre>" > /tmp/index.html
+        cat /var/log/myapp/log.txt >> /tmp/index.html
+        echo "</pre></body></html>" >> /tmp/index.html
+        aws s3 cp /var/log/myapp/log.txt s3://nginx-logs-bucket-ust4/log.txt
+        aws s3 cp /tmp/index.html s3://nginx-logs-bucket-ust4/index.html
+        EOF
+        chmod +x /etc/cron.hourly/upload_logs
+            
+        
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH and HTTP traffic
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 # Replace with your IP for better security
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+Outputs:
+  PublicIP:
+    Description: Public IP address of the EC2 instance
+    Value: !GetAtt WebServerInstance.PublicIp
+  PublicDNS:
+    Description: Public DNS name of the EC2 instance
+    Value: !GetAtt WebServerInstance.PublicDnsName
+
+  S3BucketName:
+    Description: Name of the S3 bucket receiving logs
+    Value: !Ref S3Bucket
+    
+  WebsiteURL:
+    Description: Public URL to view EC2 logs
+    Value: !Sub "http://${S3Bucket}.s3-website-${AWS::Region}.amazonaws.com"
+
+ 
